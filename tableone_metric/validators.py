@@ -2,7 +2,7 @@ from typing import Any, List, Optional, Union, Dict
 
 import pandas as pd
 
-from tableone.exceptions import InputError
+from tableone_metric.exceptions import InputError
 
 
 class DataValidator:

@@ -3,15 +3,15 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "tableone"
-version = "0.9.1"
+name = "tableone_metric"
+version = "0.9.1.0"
 authors = [
   { name="Tom Pollard", email="tpollard@mit.edu" },
   { name="Alistair Johnson" },
   { name="Jesse Raffa" }
 ]
 license = {file = "LICENSE"}
-description = "tableone is a package for creating 'Table 1' summary statistics for a patient population."
+description = "tableone is a package for creating 'Table 1' summary statistics for a patient population. modified by Beatrice BM on 01/08/25 to test custom metric functions instead of frequency for categorical variables"
 readme = "README.md"
 requires-python = ">=3.9"
 keywords=["Table one", "Table 1", "statistics", "cohort", "clinical research"]

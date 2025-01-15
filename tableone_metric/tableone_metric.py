@@ -2,23 +2,23 @@
 The tableone package is used for creating "Table 1" summary statistics for
 research papers.
 """
-from typing import Optional, Union
+from typing import Optional, Union, Callable
 import warnings
 
 import numpy as np
 import pandas as pd
 from tabulate import tabulate
 
-from tableone.deprecations import handle_deprecated_parameters
-from tableone.formatting import (docstring_copier, set_display_options, format_pvalues,
+from tableone_metric.deprecations import handle_deprecated_parameters
+from tableone_metric.formatting import (docstring_copier, set_display_options, format_pvalues,
                                  format_smd_columns, apply_limits, sort_and_reindex,
                                  apply_order, mask_duplicate_values, create_row_labels,
                                  reorder_columns)
-from tableone.preprocessors import (ensure_list, detect_categorical, order_categorical,
+from tableone_metric.preprocessors import (ensure_list, detect_categorical, order_categorical,
                                     get_groups, handle_categorical_nulls)
-from tableone.statistics import Statistics
-from tableone.tables import Tables
-from tableone.validators import DataValidator, InputValidator
+from tableone_metric.statistics import Statistics
+from tableone_metric.tables import Tables
+from tableone_metric.validators import DataValidator, InputValidator
 
 
 def load_dataset(name: str) -> pd.DataFrame:
@@ -219,7 +219,10 @@ class TableOne:
                  dip_test: bool = False, normal_test: bool = False,
                  tukey_test: bool = False,
                  pval_threshold: Optional[float] = None,
-                 include_null: Optional[bool] = True) -> None:
+                 include_null: Optional[bool] = True,
+                 cat_agg_func: Optional[Callable] = None,
+                 response: Optional[str] = None,
+                 cat_agg_label: Optional[str] = None) -> None:
 
         # Warn about deprecated parameters
         handle_deprecated_parameters(labels, isnull, pval_test_name, remarks)
@@ -234,7 +237,7 @@ class TableOne:
                                                htest, missing, ddof, rename, sort, limit, order,
                                                label_suffix, decimals, smd, overall, row_percent,
                                                dip_test, normal_test, tukey_test, pval_threshold,
-                                               include_null)
+                                               include_null, cat_agg_func, response, cat_agg_label)
 
         # Initialize intermediate tables
         self.initialize_intermediate_tables()
@@ -276,7 +279,7 @@ class TableOne:
                                    htest, missing, ddof, rename, sort, limit, order,
                                    label_suffix, decimals, smd, overall, row_percent, 
                                    dip_test, normal_test, tukey_test, pval_threshold,
-                                   include_null):
+                                   include_null, cat_agg_func, response, cat_agg_label):
         """
         Initialize attributes.
         """
@@ -311,6 +314,9 @@ class TableOne:
         self._sort = sort
         self._tukey_test = tukey_test
         self._warnings = {}
+        self._cat_agg_func = cat_agg_func
+        self._response = response
+        self._cat_agg_label = cat_agg_label
 
         if self._categorical and self._include_null:
             data[self._categorical] = handle_categorical_nulls(data[self._categorical])
@@ -356,13 +362,27 @@ class TableOne:
 
         # create overall tables if required
         if self._categorical and self._groupby and self._overall:
-            self.cat_describe_all = self.tables.create_cat_describe(data,
-                                                                    self._categorical,
-                                                                    self._decimals,
-                                                                    self._row_percent,
-                                                                    self._include_null,
-                                                                    groupby=None,
-                                                                    groupbylvls=['Overall'])
+            # create the overall table using the cat agg metric if it's defined
+            if self._cat_agg_func is not None:
+                self.cat_describe_all = self.tables.create_cat_metric_describe(data,
+                                                                        self._categorical,
+                                                                        self._response,
+                                                                        self._cat_agg_func,
+                                                                        self._cat_agg_label,
+                                                                        self._decimals,
+                                                                        self._row_percent,
+                                                                        self._include_null,
+                                                                        groupby=None,
+                                                                        groupbylvls=['Overall'])
+
+            else:
+                self.cat_describe_all = self.tables.create_cat_describe(data,
+                                                                        self._categorical,
+                                                                        self._decimals,
+                                                                        self._row_percent,
+                                                                        self._include_null,
+                                                                        groupby=None,
+                                                                        groupbylvls=['Overall'])
 
         if self._continuous and self._groupby and self._overall:
             self.cont_describe_all = self.tables.create_cont_describe(data,
@@ -376,13 +396,26 @@ class TableOne:
 
         # create descriptive tables
         if self._categorical:
-            self.cat_describe = self.tables.create_cat_describe(data,
-                                                                self._categorical,
-                                                                self._decimals,
-                                                                self._row_percent,
-                                                                self._include_null,
-                                                                groupby=self._groupby,
-                                                                groupbylvls=self._groupbylvls)
+            # create tables using the cat agg metric if it's defined
+            if self._cat_agg_func is not None:
+                self.cat_describe = self.tables.create_cat_metric_describe(data,
+                                                                    self._categorical,
+                                                                    self._response,
+                                                                    self._cat_agg_func,
+                                                                    self._cat_agg_label,
+                                                                    self._decimals,
+                                                                    self._row_percent,
+                                                                    self._include_null,
+                                                                    groupby=self._groupby,
+                                                                    groupbylvls=self._groupbylvls)
+            else:
+                self.cat_describe = self.tables.create_cat_describe(data,
+                                                                    self._categorical,
+                                                                    self._decimals,
+                                                                    self._row_percent,
+                                                                    self._include_null,
+                                                                    groupby=self._groupby,
+                                                                    groupbylvls=self._groupbylvls)
 
         if self._continuous:
             self.cont_describe = self.tables.create_cont_describe(data,
@@ -405,17 +438,17 @@ class TableOne:
         # create continuous and categorical tables
         if self._categorical:
             self.cat_table = self.tables.create_cat_table(data,
-                                                          self._overall,
-                                                          self.cat_describe,
-                                                          self._categorical,
-                                                          self._include_null,
-                                                          self._pval,
-                                                          self._pval_adjust,
-                                                          self.htest_table,
-                                                          self._smd,
-                                                          self.smd_table,
-                                                          self._groupby,
-                                                          self.cat_describe_all)
+                                                        self._overall,
+                                                        self.cat_describe,
+                                                        self._categorical,
+                                                        self._include_null,
+                                                        self._pval,
+                                                        self._pval_adjust,
+                                                        self.htest_table,
+                                                        self._smd,
+                                                        self.smd_table,
+                                                        self._groupby,
+                                                        self.cat_describe_all)
 
         if self._continuous:
             self.cont_table = self.tables.create_cont_table(data,
@@ -604,6 +637,52 @@ class TableOne:
 
         return table
 
+    def _insert_agg_row(self, table, data, agg_func, agg_label):
+        """
+        Inserts a row that shows `agg_label`, the high level aggregated stats.
+        """
+        # display(data)
+        # insert n row
+        agg_row = pd.DataFrame(columns=['variable', 'value', 'Missing'])
+        agg_row = agg_row.set_index(['variable', 'value'])
+        agg_row.loc[agg_label, 'Missing'] = None
+
+        # support pandas<=0.22
+        try:
+            table = pd.concat([agg_row, table], sort=False)
+        except TypeError:
+            table = pd.concat([agg_row, table])
+
+        if self._groupbylvls == ['Overall']:
+            agg_val = agg_func(data)
+            if isinstance(agg_val, float):
+                f = '{{:.{}f}}'.format(self._decimals)
+                agg_val = f.format(agg_val)
+            else:
+                agg_val = agg_val.map(str)
+            table.loc[agg_label, 'Overall'] = agg_val
+
+        else:
+            if self._overall:
+                agg_val = agg_func(data)
+                if isinstance(agg_val, float):
+                    f = '{{:.{}f}}'.format(self._decimals)
+                    agg_val = f.format(agg_val)
+                else:
+                    agg_val = agg_val.map(str)
+                table.loc[agg_label, 'Overall'] = agg_val
+
+            for g in self._groupbylvls:
+                agg_val = agg_func(data[data[self._groupby] == g])
+                if isinstance(agg_val, float):
+                    f = '{{:.{}f}}'.format(self._decimals)
+                    agg_val = f.format(agg_val)
+                else:
+                    agg_val = agg_val.map(str)
+                table.loc[agg_label, '{}'.format(g)] = agg_val
+
+        return table
+
     def _apply_alt_labels(self, table):
         """
         Applies alternative labels to the variables if required.
@@ -614,7 +693,8 @@ class TableOne:
                                                      self._label_suffix,
                                                      self._nonnormal,
                                                      self._min_max,
-                                                     self._categorical
+                                                     self._categorical,
+                                                     self._cat_agg_label,
                                                      ), level=0)
 
         return table
@@ -658,7 +738,11 @@ class TableOne:
         table = format_smd_columns(table, self._smd, self.smd_table)
         table = apply_order(table, self._order, self._groupby)
         table = apply_limits(table, data, self._limit, self._categorical, self._order)
+        
+        if self._cat_agg_func is not None:
+            table = self._insert_agg_row(table, data, self._cat_agg_func, self._cat_agg_label)
         table = self._insert_n_row(table, data)
+
         table = mask_duplicate_values(table, optional_columns, self._smd, self.smd_table)
 
         # remove unwanted columns

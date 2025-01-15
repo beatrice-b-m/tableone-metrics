@@ -6,8 +6,8 @@ import pandas as pd
 from scipy import stats
 from statsmodels.stats import multitest
 
-from tableone.modality import hartigan_diptest
-from tableone.exceptions import InputError
+from tableone_metric.modality import hartigan_diptest
+from tableone_metric.exceptions import InputError
 
 
 class Statistics:

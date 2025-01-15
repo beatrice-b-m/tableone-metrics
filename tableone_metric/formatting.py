@@ -211,7 +211,7 @@ def mask_duplicate_values(table, optional_columns, smd, smd_table):
 
 
 def create_row_labels(columns, alt_labels, label_suffix, nonnormal, 
-                      min_max, categorical) -> dict:
+                      min_max, categorical, cat_agg_label) -> dict:
     """
     Take the original labels for rows. Rename if alternative labels are
     provided. Append label suffix if label_suffix is True.
@@ -243,7 +243,8 @@ def create_row_labels(columns, alt_labels, label_suffix, nonnormal,
                     labels[k] = "{}, {}".format(labels[k],
                                                 "median [Q1,Q3]")
             elif k in categorical:
-                labels[k] = "{}, {}".format(labels[k], "n (%)")
+                labels[k] = "{}, {}".format(labels[k], cat_agg_label if cat_agg_label is not None else "n (%)")  
+
             else:
                 if min_max and k in min_max:
                     labels[k] = "{}, {}".format(labels[k],

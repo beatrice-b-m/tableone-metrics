@@ -3,8 +3,8 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from tableone.statistics import Statistics
-from tableone.exceptions import InputError, non_continuous_warning
+from tableone_metric.statistics import Statistics
+from tableone_metric.exceptions import InputError, non_continuous_warning
 
 
 class Tables:
@@ -297,6 +297,119 @@ class Tables:
             else:
                 df['t1_summary'] = (df.freq.map(str) + ' ('
                                     + df.percent_str.map(str)+')')
+
+            # add to dictionary
+            group_dict[g] = df
+
+        df_cat = pd.concat(group_dict, axis=1)
+        # ensure the groups are the 2nd level of the column index
+        if df_cat.columns.nlevels > 1:
+            df_cat = df_cat.swaplevel(0, 1, axis=1).sort_index(axis=1, level=0)
+
+        return df_cat
+
+    def create_cat_metric_describe(self,
+                            data: pd.DataFrame,
+                            categorical,
+                            response,
+                            agg_func,
+                            agg_label,
+                            decimals,
+                            row_percent,
+                            include_null,
+                            groupby: Optional[str] = None,
+                            groupbylvls: Optional[list] = None
+                            ) -> pd.DataFrame:
+        """
+        Describe the categorical data with a custom metric.
+
+        Parameters
+        ----------
+            data : pandas DataFrame
+                The input dataset.
+            groupby : Str
+                Variable to group by.
+            groupbylvls : List
+                List of levels in the groupby variable.
+
+        Returns
+        ----------
+            df_cat : pandas DataFrame
+                Summarise the categorical variables.
+        """
+        group_dict = {}
+
+        cat_slice = data[categorical + [response]].copy()
+
+        for g in groupbylvls:  # type: ignore
+            if groupby:
+                df = cat_slice.loc[data[groupby] == g, categorical + [response]]
+            else:
+                df = cat_slice.copy()
+
+            # create n column
+            # must be done before converting values to strings
+            ct = df.count().to_frame(name='n')
+            ct[agg_label] = agg_func(df) # apply agg func to the whole slice
+            ct.index.name = 'variable'
+
+            if include_null:
+                # create an empty Missing column for display purposes
+                nulls = pd.DataFrame('', index=df.columns, columns=['Missing'])
+                nulls.index.name = 'variable'
+            else:
+                # Count and display null count
+                nulls = df.isnull().sum().to_frame(name='Missing')
+                nulls.index.name = 'variable'
+
+            # Convert to str to handle int converted to boolean in the index.
+            # Also avoid nans.
+            for column in df.columns:
+                df[column] = [str(row) if not pd.isnull(row)
+                              else None for row in df[column].values]
+                cat_slice[column] = [str(row) if not pd.isnull(row)
+                                     else None for row
+                                     in cat_slice[column].values]
+
+            # melt the df with the response feature as the id, then group by variable/values and apply
+            # the defined aggregation function (agg_func), finally cast the outputs to a df with the
+            # feature named 'primary'
+            # TODO: allow a secondary measure to be defined
+            df = (df.melt(id_vars=response)
+                .groupby(['variable', 'value'])
+                .apply(agg_func)
+                .to_frame(name='primary')
+            )
+
+            # set number of decimal places for percent
+            if isinstance(decimals, int):
+                n = decimals
+            else:
+                n = 3
+
+            f = '{{:.{}f}}'.format(n)
+            df['primary_str'] = df['primary'].astype(float).map(f.format)
+
+            # join count column
+            df = df.join(ct)
+
+            # only save null count to the first category for each variable
+            # do this by extracting the first category from the df row index
+            levels = df.reset_index()[['variable',
+                                       'value']].groupby('variable').first()
+            # add this category to the nulls table
+            nulls = nulls.join(levels)
+            nulls = nulls.set_index('value', append=True)
+            # join nulls to categorical
+            df = df.join(nulls)
+
+            # add summary column
+            # if row_percent:
+            #     df['t1_summary'] = (df.freq.map(str) + ' ('
+            #                         + df.percent_row_str.map(str)+')')
+            # else:
+            # TODO: allow a secondary metric to be formatted into this
+            df['t1_summary'] = df.primary_str
 
             # add to dictionary
             group_dict[g] = df
